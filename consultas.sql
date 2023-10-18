@@ -1,0 +1,119 @@
+--Group by/Having: 1
+--APRESENTA O NOME DOS PROPRIETARIOS QUE INVESTEM EM MAIS DE UMA FAZENDA
+SELECT P.NOME
+FROM PROPRIETARIO P
+WHERE EXISTS (SELECT I.CPF 
+               FROM INVESTE I
+               WHERE I.CPF = P.CPF
+               GROUP BY I.CPF
+               HAVING COUNT(*) > 1); 
+
+--Junção interna: 2
+--NOME DO ANIMA, DO SEU CUIDADOR, DA SUA FAZENDA E SEU PROPRIETARIO
+SELECT A.NOME, FC.NOME, FZ.COD_PROPRIEDADE, P.NOME
+FROM ANIMAL A INNER JOIN FUNCIONARIO FC ON (A.CUIDADOR = FC.ID)
+              INNER JOIN FAZENDA FZ ON (FC.COD_PROPRIEDADE = FZ.COD_PROPRIEDADE)
+              INNER JOIN PROPRIETARIO P ON (FZ.CPF = P.CPF)
+
+--Junção externa: 3
+--PROJETAR EM ORDEM CRESCENTE DE ID DE TODOS OS FUNCIONARIOS QUE NAO TEM GERENTE E OS RESPECTIVOS ANIMAIS QUE ALIMENTAM
+SELECT F.ID, A.NOME
+FROM FUNCIONARIO F LEFT OUTER JOIN ANIMAL A ON F.ID = A.CUIDADOR
+WHERE F.ID_GERENTE IS NULL
+ORDER BY F.ID
+
+--Semi junção: 4
+--PROJETAR O NOME E ESPECIE DOS ANIMAIS CUJA ALIMENTAÇÃO CONTÉM CENOURAS
+SELECT ANI.NOME, ANI.ESPECIE
+FROM ANIMAL ANI 
+WHERE EXISTS (SELECT *
+              FROM ALIMENTACAO AL 
+              WHERE AL.CODIGO = ANI.CODIGO
+              AND AL.ALIMENTACAO = 'Cenouras')
+
+--Anti-junção: 5
+--EXIBIR OS NOMES DE QUEM NÃO É FUNCIONARIO DAS FAZENDAS DO PROPRIETARIO CRUISE
+SELECT F.NOME
+FROM FUNCIONARIO F
+WHERE NOT EXISTS (SELECT FA.COD_PROPRIEDADE
+                  FROM FAZENDA FA
+                  WHERE F.COD_PROPRIEDADE = FA.COD_PROPRIEDADE 
+                  AND EXISTS(SELECT P.CPF
+                        FROM PROPRIETARIO P
+                        WHERE FA.CPF = P.CPF AND P.NOME = 'Cruise'))
+
+--Subconsulta do tipo escalar: 6
+--O numero de cadastro dos turistas que se hospedaram na "Rua A, 10"
+SELECT H.NUM_CADASTRO
+FROM HOSPEDA H
+WHERE H.COD_PROPRIEDADE = (SELECT F.COD_PROPRIEDADE
+                           FROM FAZENDA F
+                           WHERE  F.END_LOTE = 'Rua A' AND F.END_NUMERO = '10')
+
+--Subconsulta do tipo LINHA: 7
+--Projeta o nome e a alimentação dos animais que são da mesma espécie e possuem o mesmo sexo do animal de código 'A005'
+SELECT A.NOME, AL.ALIMENTACAO
+FROM ALIMENTACAO AL INNER JOIN ANIMAL A ON AL.CODIGO = A.CODIGO
+WHERE (A.ESPECIE, A.SEXO) = (
+    SELECT ESPECIE, SEXO
+    FROM ANIMAL
+    WHERE CODIGO = 'A005'
+)
+
+--Subconsulta do tipo TABELA: 8
+--PROJETAR O ID DOS FUNCIONARIOS QUE NAO SAO RESPONSAVEIS POR UM SETOR E O NOME DO SETOR EM QUE ELES TRABALHAM
+SELECT T.ID AS ID_FUNCIONARIO, S.NOME AS NOME 
+FROM TRABALHA T INNER JOIN SETOR S ON T.ID_ART = S.ID_ART
+WHERE T.ID NOT IN ( 
+    SELECT S.RESPONSAVEL 
+    FROM SETOR S 
+)
+
+--Operação de conjunto: 9
+--GERENTES QUE JÁ ALIMENTARAM ANIMAIS E JÁ APRESENTARAM A FAZENDA
+SELECT AN.CUIDADOR AS GERENTE
+FROM ANIMAL AN
+WHERE EXISTS(
+    SELECT F.ID_GERENTE
+    FROM FUNCIONARIO F
+    WHERE F.ID_GERENTE = AN.CUIDADOR)
+INTERSECT
+SELECT AP.ID 
+FROM APRESENTA AP
+
+--Procedimento com SQL embutida e parâmetro: 10
+--Procedimento que retorna o nome e código dos animais com o nome maior que x
+CREATE OR REPLACE PROCEDURE ANIMAIS_NOMES_GRANDES (X IN NUMBER) AS
+BEGIN
+  FOR registro IN (
+                SELECT A.CODIGO, A.NOME 
+                FROM ANIMAL A 
+                WHERE (SELECT LENGTH(A2.NOME)
+                       FROM ANIMAL A2 
+                       WHERE A.CODIGO = A2.CODIGO) > X) 
+    LOOP
+    DBMS_OUTPUT.PUT_LINE(registro.CODIGO  ||' '||  registro.NOME);
+  END LOOP;
+END ANIMAIS_NOMES_GRANDES;
+
+--Função com SQL embutida e parâmetro: 11
+--Função que retorna a soma de todos os recursos dos setores de uma fazenda em que há pelo menos um funcionário trabalhando no setor
+CREATE OR REPLACE FUNCTION recursos_total (cod_prop VARCHAR2)
+RETURN NUMBER
+IS
+    recursos_func NUMBER(10,2);
+BEGIN
+    SELECT SUM(S.RECURSO) INTO recursos_func
+    FROM SETOR S
+    WHERE EXISTS(
+        SELECT *
+        FROM TRABALHA T
+        WHERE T.ID_ART = S.ID_ART
+        AND EXISTS(
+            SELECT *
+            FROM FUNCIONARIO F
+            WHERE F.COD_PROPRIEDADE = cod_prop
+            AND F.ID = T.ID));
+
+  RETURN recursos_func;
+END;
